@@ -1,0 +1,4 @@
+flask
+vanna[chromadb,openai]
+db-dtypes
+python-dotenv
