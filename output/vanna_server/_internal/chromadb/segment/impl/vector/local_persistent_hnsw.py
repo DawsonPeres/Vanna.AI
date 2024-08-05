@@ -345,7 +345,7 @@ class PersistentLocalHnswSegment(LocalHnswSegment):
         k = query["k"]
         if k > self.count():
             logger.warning(
-                f"Number of requested results {k} is greater than number of elements in index {self.count()}, updating n_results = {self.count()}"
+                f"Number of requested results {k} is greater than number of elements in index {self.count()}, updating b n_results = {self.count()}"
             )
             k = self.count()
 

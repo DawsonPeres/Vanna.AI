@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 # pip install gunicorn
 # pip install gevent
-
+import json
+import re
 # from gevent import pywsgi
 
 from urllib.parse import quote_plus as urlquote
@@ -9,6 +10,10 @@ import datetime
 from common.common_result import ApiResponse
 import sys
 import yaml
+import threading
+
+from services.search_chinese_noun_service import split_sentence
+from services.sqlite_service import SqliteService
 
 type = sys.getfilesystemencoding()
 
@@ -21,13 +26,15 @@ from flask import Flask, jsonify, Response, request, redirect, url_for
 import flask
 import os
 from cache import MemoryCache
-from vanna_entity.MyVanna import MyVanna
+from vanna_entity.MyVanna import MyVanna, add_documentation, get_upload_task_state
 
 from sqlalchemy import create_engine
 
 from controller.generate_plotly_html import query_for_chart_html
 
 import cx_Oracle
+
+from entity.logging import logger
 
 # 获取yaml文件路径
 yamlPath = 'config.yml'
@@ -53,6 +60,8 @@ except Exception as e:
 
 # 解决问题(cx_Oracle.DatabaseError) DPI-1047: Cannot locate a 64-bit Oracle Client library:
 # "E:\Development\oracle\product\11.2.0\client_1\bin\oci.dll is not the correct architecture"
+os.environ['NLS_LANG'] = 'SIMPLIFIED CHINESE_CHINA.UTF8'
+
 cx_Oracle.init_oracle_client(lib_dir=cx_oracle_path)
 # cx_Oracle.init_oracle_client(lib_dir=r"E:\Development\PremiumSoft\Navicat Premium 15\instantclient_11_2")
 
@@ -85,6 +94,9 @@ cache = MemoryCache()
 vn = MyVanna(config={'api_key': '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', 'model': 'gpt-3.5-turbo'
                      # , 'path': 'E:\\work-space\\demo-workspace\\github\\fork\\vanna_entity\\chroma.sqlite3'
                      })
+# vn = MyVanna(config={'api_key': 'sk-proj-nJpxRq9VwWJDE6kMGgG0T3BlbkFJfbz9EpujVaO2PjoqPpr7', 'model': 'gpt-3.5-turbo'
+#                      # , 'path': 'E:\\work-space\\demo-workspace\\github\\fork\\vanna_entity\\chroma.sqlite3'
+#                      })
 # 连接ChatGLM3
 # vn = MyVanna(config={'api_key': 'EMPTY', 'model': 'chatglm3-6b', 'base_url': 'http://127.0.0.1:8009/v1/'})
 
@@ -172,7 +184,7 @@ vn.static_documentation = "This is a Oracle database"
 # 自己添加的方法,初始化数据库训练
 @app.route('/api/init_training_db', methods=['GET', 'POST'])
 def init_training_db():
-    # db_type 数据库类型,0:oracle,1:mssql,2:mssql
+    # db_type 数据库类型,0:oracle,1:mysql,2:mssql_server
     db_type = flask.request.args.get('db_type')
 
     # -------------------------------核心库初始化训练-------------------------------
@@ -183,7 +195,12 @@ def init_training_db():
     # table_catalog对应mysql的def; table_schema对应mysql的库名
     df_information_schema = None
     if db_type == '0':
-        df_information_schema = vn.run_sql("SELECT main.OWNER as table_catalog,main.OWNER as table_schema,main.* FROM all_tab_cols main where main.OWNER='IQMS'")
+        df_information_schema = vn.run_sql(
+            # "SELECT main.OWNER as table_catalog,main.OWNER as table_schema,main.* FROM all_tab_cols main where main.OWNER='IQMS'"
+            "SELECT main.OWNER as table_catalog,main.OWNER as table_schema,main.* FROM all_tab_cols main where main.OWNER='IQMS' AND main.TABLE_NAME LIKE 'ARINVT%'"
+            # "SELECT main.OWNER as table_catalog,main.OWNER as table_schema,main.* FROM all_tab_cols main where main.OWNER='IQMS' AND main.TABLE_NAME LIKE 'B%'"
+            # "SELECT main.OWNER as table_catalog,main.OWNER as table_schema,main.* FROM all_tab_cols main where main.OWNER='IQMS' AND main.TABLE_NAME LIKE 'C%'"
+        )
         vn.static_documentation = "This is a Oracle database"
     elif db_type == '1' or db_type == '2':
         vn.static_documentation = "This is a MySQL database"
@@ -197,6 +214,7 @@ def init_training_db():
 
     # This will break up the information schema into bite-sized chunks that can be referenced by the LLM
     plan = vn.get_training_plan_generic(df_information_schema)
+    logger.info(plan)
     print(plan)
 
     # If you like the plan, then uncomment this and run it to train
@@ -300,7 +318,8 @@ def download_csv(id: str, df):
 @requires_cache(['df', 'question', 'sql'])
 def generate_plotly_figure(id: str, df, question, sql):
     try:
-        code = vn.generate_plotly_code(question=question, sql=sql, df_metadata=f"Running df.dtypes gives:\n {df.dtypes}")
+        code = vn.generate_plotly_code(question=question, sql=sql,
+                                       df_metadata=f"Running df.dtypes gives:\n {df.dtypes}")
         fig = vn.get_plotly_figure(plotly_code=code, df=df, dark_mode=False)
         fig_json = fig.to_json()
 
@@ -324,7 +343,8 @@ def generate_plotly_figure(id: str, df, question, sql):
 @requires_cache(['df', 'question', 'sql'])
 def generate_plotly_figure_to_html_custom(id: str, df, question, sql):
     try:
-        code = vn.generate_plotly_code(question=question, sql=sql, df_metadata=f"Running df.dtypes gives:\n {df.dtypes}")
+        code = vn.generate_plotly_code(question=question, sql=sql,
+                                       df_metadata=f"Running df.dtypes gives:\n {df.dtypes}")
         fig = vn.get_plotly_figure(plotly_code=code, df=df, dark_mode=False)
         fig_json = fig.to_json()
 
@@ -382,6 +402,19 @@ def add_training_data():
     documentation = flask.request.json.get('documentation')
 
     try:
+        if documentation:
+            sqlite_server = SqliteService()
+            pattern = r'(\w+)=([^\t\n;,]+)'
+            matches = re.findall(pattern, documentation)
+            for match in matches:
+                # 每个键值对中，使用等号分隔key和value
+                key, value = match[0], match[1]
+                sqlite_server.insert_or_update_data({"key": key, "value": value})
+            sqlite_server.close()
+    except Exception as e:
+        logger.error(f"【add_training_data】 error: {e}")
+
+    try:
         id = vn.train(question=question, sql=sql, ddl=ddl, documentation=documentation)
 
         return jsonify({"id": id})
@@ -412,6 +445,7 @@ def add_training_data_custom():
 
     input_json = flask.request.get_json()
     print(f'{datetime.datetime.now()}--add_training_data_input_json:{input_json}')
+    logger.info(f'add_training_data_custom-input_json:{input_json}')
     if input_json is None or len(input_json) <= 0:
         api_response.set_error("请输入参数")
         return api_response.json()
@@ -442,7 +476,8 @@ def add_training_data_custom():
         # print(collection_query)
         # return
 
-        training_data_single = vn.get_single_training_data_custom(question=question, sql=sql, ddl=ddl, documentation=documentation)
+        training_data_single = vn.get_single_training_data_custom(question=question, sql=sql, ddl=ddl,
+                                                                  documentation=documentation)
 
         single_ids = training_data_single["ids"]
         if len(single_ids) > 0:
@@ -450,7 +485,11 @@ def add_training_data_custom():
             return api_response.json()
 
         # 尝试使用提供的训练数据进行训练，并获取训练的唯一标识符
-        id = vn.train(question=question, sql=sql, ddl=ddl, documentation=documentation)
+        # id = vn.train(question=question, sql=sql, ddl=ddl, documentation=documentation)
+
+        df = vn.run_sql(sql)
+        plan = vn.get_training_plan_generic(df)
+        vn.train(plan=plan)
 
         data = {"id": id}
         api_response.set_success("添加训练数据成功", data)
@@ -503,6 +542,43 @@ def load_question(id: str, question, sql, df, fig_json, followup_questions):
 @app.route('/api/v0/get_question_history', methods=['GET'])
 def get_question_history():
     return jsonify({"type": "question_history", "questions": cache.get_all(field_list=['question'])})
+
+
+@app.route('/api/v0/upload_documentation_file', methods=['POST'])
+def upload_documentation_file():
+    # 获取上传的文件
+    file = flask.request.files['file']
+    if file.filename.endswith('.xlsx') or file.filename.endswith('.xls'):
+        table_df = pd.read_excel(file, sheet_name='table', usecols=[0], header=None)
+        column_df = pd.read_excel(file, sheet_name='column', usecols=[0], header=None)
+
+        table_document_list = split_sentence(table_df[0].tolist(), documentation_type="table")
+        column_document_list = split_sentence(column_df[0].tolist(), documentation_type="column")
+        try:
+            split_server = SqliteService()
+
+            insert_query = """INSERT INTO "main"."record" ("key", "value") VALUES (?, ?);"""
+            split_server.cursor.executemany(insert_query, table_document_list + column_document_list)
+            split_server.conn.commit()
+            split_server.close()
+
+        except Exception as e:
+            return jsonify({"type": "upload_file", "status": "FAIL", "message": "insert fail:{}".format(e)})
+
+        task_id = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+        thread = threading.Thread(target=add_documentation, args=(table_df[0].tolist() + column_df[0].tolist(), task_id))
+        thread.start()
+
+        return jsonify({"type": "upload_file", "status": "SUCCESS", "message": "", "data": task_id})
+    else:
+        return jsonify({"type": "upload_file", "status": "FAIL", "message": "Only xlsx and xls files are allowed."})
+
+
+@app.route('/api/v0/get_upload_task_state', methods=['GET'])
+def get_task_state():
+    task_id = flask.request.args.get('task_id')
+    state, fail_data = get_upload_task_state(task_id)
+    return jsonify({"type": "upload_file", "status": state, "message": "", "data": fail_data})
 
 
 @app.route('/')

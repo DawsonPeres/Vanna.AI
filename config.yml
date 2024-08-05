@@ -1,6 +1,7 @@
 path:
-  cx_oracle: "E:\\Development\\PremiumSoft\\Navicat Premium 15\\instantclient_11_2"
+#  cx_oracle: "E:\\Development\\PremiumSoft\\Navicat Premium 15\\instantclient_11_2"
+  cx_oracle: "C:\\Program Files\\PremiumSoft\\Navicat Premium Lite 17\\instantclient_11_2"
 #数据库连接字符串
 db_str:
-  local: "mssql+pymssql://sa:Sensnow2022@120.46.91.216:1433/ismartMemberService"
-  #local: "oracle://iqms:iqms@192.168.110.74:1521/IQORA"
+#  local: "mssql+pymssql://sa:Sensnow2022@120.46.91.216:1433/ismartMemberService"
+  local: "oracle://iqms:iqms@192.168.110.74:1521/IQORA"
