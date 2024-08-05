@@ -1,24 +1,25 @@
-import spacy
+# import spacy
 import jieba.posseg as pseg
 
+
 # 加载中文模型
-nlp = spacy.load("zh_core_web_sm")
+# nlp = spacy.load("zh_core_web_sm")
 
 
-def extract_keywords(sentence):
-    """查找中文关键词"""
-    doc = nlp(sentence)
-    if len(doc) < 2:
-        return [sentence]
-    keywords = []
-    for token in doc:
-        # 查找名词
-        if token.pos_ in ["NOUN", "PROPN"]:
-            # 收集名词及其修饰词
-            phrase = ''.join([child.text for child in token.subtree if child.pos_ in ["NOUN", "PROPN"]])
-            if phrase and phrase not in keywords:
-                keywords.append(phrase)
-    return keywords
+# def extract_keywords(sentence):
+#     """查找中文关键词"""
+#     doc = nlp(sentence)
+#     if len(doc) < 2:
+#         return [sentence]
+#     keywords = []
+#     for token in doc:
+#         # 查找名词
+#         if token.pos_ in ["NOUN", "PROPN"]:
+#             # 收集名词及其修饰词
+#             phrase = ''.join([child.text for child in token.subtree if child.pos_ in ["NOUN", "PROPN"]])
+#             if phrase and phrase not in keywords:
+#                 keywords.append(phrase)
+#     return keywords
 
 
 def cut_sentence(sentence: str) -> list:

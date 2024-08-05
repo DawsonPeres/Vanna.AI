@@ -183,12 +183,6 @@ def get_record_where_document(noun_list, contains=False):
     return where_document
 
 
-def get_similar_documents(question: str, **kwargs):
-    """根据问题生成相近的信息，"""
-    noun_list = extract_keywords(question)
-    return
-
-
 def add_documentation(document_list, task_id):
     sqlite_server = SqliteService()
     insert_sql = """INSERT INTO "main"."upload_document" ("task_id", "state") VALUES ('{}', '{}');""".format(

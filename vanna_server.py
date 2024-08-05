@@ -196,10 +196,7 @@ def init_training_db():
     df_information_schema = None
     if db_type == '0':
         df_information_schema = vn.run_sql(
-            # "SELECT main.OWNER as table_catalog,main.OWNER as table_schema,main.* FROM all_tab_cols main where main.OWNER='IQMS'"
-            "SELECT main.OWNER as table_catalog,main.OWNER as table_schema,main.* FROM all_tab_cols main where main.OWNER='IQMS' AND main.TABLE_NAME LIKE 'ARINVT%'"
-            # "SELECT main.OWNER as table_catalog,main.OWNER as table_schema,main.* FROM all_tab_cols main where main.OWNER='IQMS' AND main.TABLE_NAME LIKE 'B%'"
-            # "SELECT main.OWNER as table_catalog,main.OWNER as table_schema,main.* FROM all_tab_cols main where main.OWNER='IQMS' AND main.TABLE_NAME LIKE 'C%'"
+            "SELECT main.OWNER as table_catalog,main.OWNER as table_schema,main.* FROM all_tab_cols main where main.OWNER='IQMS'"
         )
         vn.static_documentation = "This is a Oracle database"
     elif db_type == '1' or db_type == '2':

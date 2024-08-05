@@ -4,8 +4,8 @@ import sqlite3
 class SqliteService:
     def __init__(self):
 
-        # self.db_path = "../record.sqlite3"
-        self.db_path = "F:\\Sensnow\\Code\\Vanna\\record.sqlite3"
+        self.db_path = "../record.sqlite3"
+        # self.db_path = "F:\\Sensnow\\Code\\Vanna\\record.sqlite3"
         self.conn = sqlite3.connect(self.db_path)
         self.cursor = self.conn.cursor()
         self.check_table_exists()
